@@ -114,6 +114,15 @@ const HISTORY = [
 ];
 
 // ---------------------------------------------------------------------------
+// Playlist Passports — Finch-style content journeys (bundled, zero server)
+// ---------------------------------------------------------------------------
+const PASSPORTS = [
+  { id: "first-mile", title: "First Mile",     subtitle: "Starter journey · 8 tracks · 40 km",       tracks: [1, 2, 3, 4, 5, 6, 7, 8],  gates: [2, 6, 11, 16, 22, 28, 33, 40] },
+  { id: "rock-road",  title: "Rock Road Trip", subtitle: "Guitars across the decades · 6 tracks · 50 km", tracks: [11, 4, 7, 14, 16, 15], gates: [8, 16, 24, 32, 41, 50] },
+  { id: "edm-lab",    title: "EDM Sprint Lab", subtitle: "Four-on-the-floor intervals · 6 tracks · 60 km", tracks: [9, 10, 12, 13, 5, 16],  gates: [10, 20, 30, 40, 50, 60] },
+];
+
+// ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 export default function App() {
@@ -135,6 +144,9 @@ export default function App() {
   const recentRef = useRef<number[]>([5]);
   const [zoneFilter, setZoneFilter] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState<string | null>(null);
+  const [passIdx, setPassIdx] = useState(1);
+  const [passKm, setPassKm] = useState(22.5);
+  const [passDone, setPassDone] = useState<number[]>([11, 4]);
   const [score, setScore] = useState(0);
   const [comboSec, setComboSec] = useState(0);
   const [lockSecThisSong, setLockSecThisSong] = useState(0);
@@ -151,7 +163,9 @@ export default function App() {
   const mult = Math.min(1 + comboSec * 0.05, 4);
   const isUnlocked = (s: Song) => s.unlockKm <= lifeKm;
   const unlockedCount = LIBRARY.filter(isUnlocked).length;
-  const nextUnlock = LIBRARY.filter((s) => s.unlockKm > lifeKm).sort((a, b) => a.unlockKm - b.unlockKm)[0] || null;
+  const passport = PASSPORTS[passIdx];
+  const passNextGate = passport.gates.find((g) => g > passKm) ?? null;
+  const passDoneCount = passDone.filter((id) => passport.tracks.includes(id)).length;
 
   // Pick a new song when target drifts from the current track
   const resync = useCallback((target: number, f: "full" | "half") => {
@@ -270,6 +284,7 @@ export default function App() {
               <div className="px-5 pt-4 pb-1 flex items-center justify-between">
                 <TabsList className="bg-zinc-800/70">
                   <TabsTrigger value="run" className="data-[state=active]:bg-zinc-700 text-zinc-300 data-[state=active]:text-white gap-1.5"><Shoe /> Run</TabsTrigger>
+                  <TabsTrigger value="passport" className="data-[state=active]:bg-zinc-700 text-zinc-300 data-[state=active]:text-white">Passport</TabsTrigger>
                   <TabsTrigger value="music" className="data-[state=active]:bg-zinc-700 text-zinc-300 data-[state=active]:text-white">Music</TabsTrigger>
                   <TabsTrigger value="history" className="data-[state=active]:bg-zinc-700 text-zinc-300 data-[state=active]:text-white">History</TabsTrigger>
                 </TabsList>
@@ -425,6 +440,75 @@ export default function App() {
                 </AnimatePresence>
               </TabsContent>
 
+              {/* ============ PASSPORT TAB ============ */}
+              <TabsContent value="passport" className="px-5 pb-6 pt-2 mt-0">
+                {/* Active passport */}
+                <Card className="bg-zinc-800/40 border-zinc-700/60 mb-4 overflow-hidden relative">
+                  <CardContent className="py-4 px-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="min-w-0">
+                        <div className="text-sm font-black truncate">{passport.title}</div>
+                        <div className="text-[11px] text-zinc-500 truncate">{passport.subtitle}</div>
+                      </div>
+                      <Badge className="bg-violet-500/15 text-violet-300 border-violet-500/30 text-[10px] shrink-0">ACTIVE</Badge>
+                    </div>
+                    <Progress value={Math.min((passKm / passport.gates[passport.gates.length - 1]) * 100, 100)} className="h-1.5 mt-2.5 bg-zinc-700 [&>div]:bg-violet-400" />
+                    <div className="flex items-center justify-between mt-1.5">
+                      <span className="text-[10px] text-zinc-500 tabular-nums">{passKm.toFixed(1)} / {passport.gates[passport.gates.length - 1]} km with this passport</span>
+                      <span className="text-[10px] text-zinc-400 font-semibold">{passDoneCount}/{passport.tracks.length} tracks → Free Run</span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Journey path */}
+                <div className="text-xs font-semibold text-zinc-400 mb-2">Journey — run the milestones to unlock tracks</div>
+                <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
+                  {passport.tracks.map((tid, i) => {
+                    const s = LIBRARY.find((x) => x.id === tid)!;
+                    const gate = passport.gates[i];
+                    const done = passDone.includes(tid);
+                    const isCurrent = !done && gate > passKm && (i === 0 || passport.gates[i - 1] <= passKm);
+                    return (
+                      <div key={tid} className={`shrink-0 w-28 rounded-xl border p-2.5 ${done ? "border-lime-500/40 bg-lime-500/5" : isCurrent ? "border-violet-400/50 bg-violet-500/10" : "border-zinc-700/60 bg-zinc-800/40"}`}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black tabular-nums ${done ? "bg-lime-400 text-zinc-900" : isCurrent ? "bg-violet-400 text-zinc-900 animate-pulse" : "bg-zinc-700 text-zinc-400"}`}>
+                            {done ? "✓" : isCurrent ? "▶" : gate}
+                          </div>
+                          <span className="text-[9px] text-zinc-500 tabular-nums">{gate} km</span>
+                        </div>
+                        <div className={`text-[11px] font-semibold truncate ${!done && !isCurrent ? "text-zinc-500" : ""}`}>{s.title}</div>
+                        <div className="text-[9px] text-zinc-500 truncate">{s.artist}</div>
+                        <div className="mt-1.5">
+                          {done
+                            ? <Badge className="bg-lime-500/15 text-lime-400 border-lime-500/30 text-[9px]">UNLOCKED</Badge>
+                            : isCurrent
+                              ? <Badge className="bg-violet-500/15 text-violet-300 border-violet-500/30 text-[9px]">UP NEXT</Badge>
+                              : <Badge variant="outline" className="text-zinc-500 border-zinc-700 text-[9px]">LOCKED</Badge>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Completed & upcoming */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="rounded-xl border border-lime-500/25 bg-lime-500/5 p-3">
+                    <div className="text-[10px] uppercase text-zinc-500 mb-1">Completed</div>
+                    <div className="text-sm font-semibold">First Mile ✓</div>
+                    <div className="text-[10px] text-zinc-500">8/8 tracks · finished Oct 20</div>
+                  </div>
+                  <div className="rounded-xl border border-zinc-700/60 bg-zinc-800/40 p-3 opacity-70">
+                    <div className="text-[10px] uppercase text-zinc-500 mb-1">Up next</div>
+                    <div className="text-sm font-semibold flex items-center gap-1.5"><Lock /> EDM Sprint Lab</div>
+                    <div className="text-[10px] text-zinc-500">unlocks when Rock Road Trip completes</div>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-zinc-600">
+                  Passports are curated playlist journeys bundled with the app (new ones arrive with updates — zero server). Completing a milestone permanently unlocks that track for Free Run playlists.
+                </p>
+              </TabsContent>
+
               {/* ============ MUSIC TAB ============ */}
               <TabsContent value="music" className="px-5 pb-6 pt-2 mt-0">
                 <div className="flex items-center justify-between gap-3 mb-4">
@@ -453,14 +537,14 @@ export default function App() {
                 <Card className="bg-zinc-800/40 border-zinc-700/60 mb-4">
                   <CardContent className="py-3.5 px-4">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="text-xs font-semibold">Progression · {unlockedCount}/{LIBRARY.length} tracks unlocked</div>
-                      <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 text-[10px] tabular-nums">
-                        {nextUnlock ? `${(nextUnlock.unlockKm - lifeKm).toFixed(1)} km → next unlock` : "all unlocked"}
+                      <div className="text-xs font-semibold">Free Run rotation · {unlockedCount}/{LIBRARY.length} tracks unlocked</div>
+                      <Badge className="bg-violet-500/15 text-violet-300 border-violet-500/30 text-[10px] tabular-nums">
+                        {passNextGate ? `${(passNextGate - passKm).toFixed(1)} km → next milestone` : "journey complete"}
                       </Badge>
                     </div>
-                    <Progress value={nextUnlock ? Math.min((lifeKm / nextUnlock.unlockKm) * 100, 100) : 100} className="h-1.5 bg-zinc-700 [&>div]:bg-amber-400" />
+                    <Progress value={Math.min((passKm / passport.gates[passport.gates.length - 1]) * 100, 100)} className="h-1.5 bg-zinc-700 [&>div]:bg-violet-400" />
                     <div className="text-[10px] text-zinc-500 mt-1.5">
-                      {lifeKm.toFixed(1)} km lifetime · new songs roll into rotation as you run — unlocks computed on-device, stored locally
+                      {lifeKm.toFixed(1)} km lifetime · complete Playlist Passport milestones (Passport tab) to unlock more tracks for Free Run playlists
                     </div>
                   </CardContent>
                 </Card>
