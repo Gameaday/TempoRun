@@ -1,0 +1,15 @@
+{
+  "id": "first-mile",
+  "title": "First Mile",
+  "subtitle": "Starter journey - 8 milestones - 40 km",
+  "milestones": [
+    { "slot": "A", "kmGate": 2,  "select": { "bpmRange": [165, 180], "genre": null }, "note": "First lock" },
+    { "slot": "B", "kmGate": 6,  "select": { "bpmRange": [165, 180], "genre": "Pop" } },
+    { "slot": "C", "kmGate": 11, "select": { "bpmRange": [170, 185], "genre": null } },
+    { "slot": "D", "kmGate": 16, "select": { "bpmRange": [170, 185], "genre": "Rock" } },
+    { "slot": "E", "kmGate": 22, "select": { "bpmRange": [145, 160], "genre": "Hip-hop" } },
+    { "slot": "F", "kmGate": 28, "select": { "bpmRange": [140, 155], "genre": "Pop" } },
+    { "slot": "G", "kmGate": 33, "select": { "bpmRange": [175, 190], "genre": null } },
+    { "slot": "H", "kmGate": 40, "select": { "bpmRange": [75, 95], "genre": null, "halfTime": true }, "note": "Cooldown finisher" }
+  ]
+}
