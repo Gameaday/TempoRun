@@ -44,11 +44,10 @@ function effectiveBpm(song: Song, feel: "full" | "half") {
   return feel === "half" ? song.bpm * 2 : song.bpm;
 }
 
-function pickSong(target: number, feel: "full" | "half", recent: number[], lifeKm: number) {
+function pickSong(pool: Song[], target: number, feel: "full" | "half", recent: number[]) {
   let best: Song | null = null;
   let bestScore = Infinity;
-  for (const s of LIBRARY) {
-    if (s.unlockKm > lifeKm) continue; // locked songs never auto-queue
+  for (const s of pool) {
     const d = Math.abs(effectiveBpm(s, feel) - target);
     const score = d + (recent.includes(s.id) ? 8 : 0);
     if (score < bestScore) {
@@ -147,6 +146,10 @@ export default function App() {
   const [passIdx, setPassIdx] = useState(1);
   const [passKm, setPassKm] = useState(22.5);
   const [passDone, setPassDone] = useState<number[]>([11, 4]);
+  const [points, setPoints] = useState(240);
+  const [purchased, setPurchased] = useState<number[]>([]);
+  const [ownedCosmetics, setOwnedCosmetics] = useState<string[]>([]);
+  const [walkMode, setWalkMode] = useState(false);
   const [score, setScore] = useState(0);
   const [comboSec, setComboSec] = useState(0);
   const [lockSecThisSong, setLockSecThisSong] = useState(0);
@@ -155,13 +158,13 @@ export default function App() {
   const lockRef = useRef(0);
   const BASE_LIFE_KM = 46.2;
 
-  const cadence = paceSecToCadence(paceSec);
+  const cadence = Math.max(100, paceSecToCadence(paceSec) - (walkMode ? 22 : 0));
   const zone = zoneFor(paceSec);
   const eff = effectiveBpm(current, feel);
   const locked = Math.abs(eff - cadence) <= 2;
   const lifeKm = BASE_LIFE_KM + distM / 1000;
   const mult = Math.min(1 + comboSec * 0.05, 4);
-  const isUnlocked = (s: Song) => s.unlockKm <= lifeKm;
+  const isUnlocked = (s: Song) => s.unlockKm <= lifeKm || purchased.includes(s.id);
   const unlockedCount = LIBRARY.filter(isUnlocked).length;
   const passport = PASSPORTS[passIdx];
   const passNextGate = passport.gates.find((g) => g > passKm) ?? null;
@@ -174,14 +177,15 @@ export default function App() {
     setPb((prev) => (finished > (prev[current.id] || 0) ? { ...prev, [current.id]: finished } : prev));
     lockRef.current = 0;
     setLockSecThisSong(0);
-    const { song, delta: d } = pickSong(target, f, recentRef.current, lifeKm);
+    const pool = LIBRARY.filter((s) => s.unlockKm <= lifeKm || purchased.includes(s.id));
+    const { song, delta: d } = pickSong(pool, target, f, recentRef.current);
     recentRef.current = [song.id, ...recentRef.current].slice(0, 4);
     setCurrent(song);
     setDelta(d);
     setSongProg(5);
     setSwitched(`Switched → ${song.title} · Δ ${d.toFixed(0)} BPM`);
     setTimeout(() => setSwitched(null), 2600);
-  }, [current, lifeKm]);
+  }, [current, lifeKm, purchased]);
 
   // React to manual pace slider changes
   const onPaceChange = (v: number[]) => {
@@ -221,6 +225,7 @@ export default function App() {
       setComboSec(comboRef.current);
       setLockSecThisSong(lockRef.current);
       setScore((s) => s + Math.round(10 * Math.min(1 + comboRef.current * 0.05, 4)));
+      if (comboRef.current % 5 === 0) setPoints((p) => p + 5); // TempoPoints accrue from play
     } else {
       comboRef.current = 0;
       setComboSec(0);
@@ -286,6 +291,7 @@ export default function App() {
                   <TabsTrigger value="run" className="data-[state=active]:bg-zinc-700 text-zinc-300 data-[state=active]:text-white gap-1.5"><Shoe /> Run</TabsTrigger>
                   <TabsTrigger value="passport" className="data-[state=active]:bg-zinc-700 text-zinc-300 data-[state=active]:text-white">Passport</TabsTrigger>
                   <TabsTrigger value="music" className="data-[state=active]:bg-zinc-700 text-zinc-300 data-[state=active]:text-white">Music</TabsTrigger>
+                  <TabsTrigger value="store" className="data-[state=active]:bg-zinc-700 text-zinc-300 data-[state=active]:text-white">Store</TabsTrigger>
                   <TabsTrigger value="history" className="data-[state=active]:bg-zinc-700 text-zinc-300 data-[state=active]:text-white">History</TabsTrigger>
                 </TabsList>
                 {running && (
@@ -355,7 +361,9 @@ export default function App() {
                     />
                   </div>
                   <div className="mt-1.5 flex items-center justify-between">
-                    <span className={`text-xs font-semibold ${zone.color}`}>{zone.name} zone</span>
+                    <span className={`text-xs font-semibold ${zone.color}`}>
+                      {zone.name} zone {walkMode && <Badge className="bg-sky-500/15 text-sky-300 border-sky-500/30 text-[9px] ml-1">WALK · {cadence} spm target</Badge>}
+                    </span>
                     <span className="text-[10px] text-zinc-500 tabular-nums">target {cadence} BPM</span>
                   </div>
                 </div>
@@ -365,9 +373,15 @@ export default function App() {
                   <CardContent className="py-4 px-4">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-xs font-semibold text-zinc-400">Drag your pace — music follows</span>
-                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
-                        <Switch checked={autoSync} onCheckedChange={setAutoSync} className="data-[state=checked]:bg-lime-500 scale-90" />
-                        Auto-sync
+                      <div className="flex items-center gap-3 text-[10px] text-zinc-500">
+                        <div className="flex items-center gap-1.5">
+                          <Switch checked={walkMode} onCheckedChange={setWalkMode} className="data-[state=checked]:bg-sky-500 scale-90" />
+                          Walk
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Switch checked={autoSync} onCheckedChange={setAutoSync} className="data-[state=checked]:bg-lime-500 scale-90" />
+                          Auto-sync
+                        </div>
                       </div>
                     </div>
                     <Slider value={[paceSec]} onValueChange={onPaceChange} min={240} max={480} step={5} />
@@ -616,6 +630,82 @@ export default function App() {
                     );
                   })}
                 </div>
+              </TabsContent>
+
+              {/* ============ STORE TAB ============ */}
+              <TabsContent value="store" className="px-5 pb-6 pt-2 mt-0">
+                {/* Balance */}
+                <div className="flex items-center justify-between rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 mb-4">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-zinc-500">TempoPoints</div>
+                    <div className="text-xl font-black tabular-nums text-amber-300">{points.toLocaleString()}</div>
+                  </div>
+                  <div className="text-right text-[10px] text-zinc-500 max-w-[180px]">Earned by running & walking — combos, PBs, passport milestones</div>
+                </div>
+
+                {/* One-off songs */}
+                <div className="text-xs font-semibold text-zinc-400 mb-2">One-off songs → your collection</div>
+                <div className="space-y-1.5 mb-4">
+                  {([{ id: 9, price: 150 }, { id: 11, price: 200 }, { id: 14, price: 300 }] as const).map((item) => {
+                    const s = LIBRARY.find((x) => x.id === item.id)!;
+                    const owned = isUnlocked(s);
+                    const canBuy = points >= item.price && !owned;
+                    return (
+                      <div key={item.id} className="flex items-center gap-3 rounded-lg bg-zinc-800/40 border border-zinc-700/60 px-3 py-2">
+                        <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${s.g} shrink-0`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate">{s.title}</div>
+                          <div className="text-[10px] text-zinc-500 truncate">{s.artist} · {s.bpm} BPM · or earn free at {s.unlockKm} km</div>
+                        </div>
+                        <Button size="sm" disabled={!canBuy}
+                          className={`h-7 px-3 text-[11px] font-semibold shrink-0 ${owned ? "bg-zinc-700 text-zinc-400" : canBuy ? "bg-amber-400 hover:bg-amber-300 text-zinc-900" : "bg-zinc-800 text-zinc-500"}`}
+                          onClick={() => { if (canBuy) { setPoints((p) => p - item.price); setPurchased((list) => [...list, item.id]); } }}>
+                          {owned ? "IN COLLECTION" : `${item.price} pts`}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Cosmetics */}
+                <div className="text-xs font-semibold text-zinc-400 mb-2">Cosmetics</div>
+                <div className="flex gap-2 mb-4">
+                  {([{ key: "vu", label: "Watch face · VU-Meter", price: 120 }, { key: "cover", label: "Passport cover · Neon Grid", price: 80 }, { key: "fx", label: "Milestone FX pack", price: 100 }] as const).map((c) => {
+                    const owned = ownedCosmetics.includes(c.key);
+                    const canBuy = points >= c.price && !owned;
+                    return (
+                      <div key={c.key} className="flex-1 rounded-xl border border-zinc-700/60 bg-zinc-800/40 p-2.5">
+                        <div className="text-[10px] text-zinc-300 font-medium truncate">{c.label}</div>
+                        <Button size="sm" disabled={!canBuy}
+                          className={`h-6 px-2 mt-2 text-[10px] font-semibold w-full ${owned ? "bg-zinc-700 text-zinc-400" : canBuy ? "bg-amber-400 hover:bg-amber-300 text-zinc-900" : "bg-zinc-800 text-zinc-500"}`}
+                          onClick={() => { if (canBuy) { setPoints((p) => p - c.price); setOwnedCosmetics((list) => [...list, c.key]); } }}>
+                          {owned ? "OWNED" : `${c.price} pts`}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Supporter */}
+                <Card className="bg-zinc-800/40 border-zinc-700/60 mb-4">
+                  <CardContent className="py-3.5 px-4">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="text-sm font-semibold">Supporter Pass</div>
+                      <Badge className="bg-lime-500/15 text-lime-400 border-lime-500/30 text-[10px]">$2.99/mo · cancel anytime</Badge>
+                    </div>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      You never pay for content. Supporting funds runners — gift a month to another runner — and adds an expanded shop, early passports (free for everyone later), and extra playlist slots.
+                    </p>
+                    <div className="flex gap-2 mt-2.5">
+                      <Button size="sm" className="h-7 px-3 text-[11px] font-semibold bg-lime-500 hover:bg-lime-400 text-zinc-900">Become a Supporter</Button>
+                      <Button size="sm" variant="outline" className="h-7 px-3 text-[11px] font-semibold border-zinc-600 text-zinc-300">Gift a month</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <p className="text-[10px] text-zinc-600">
+                  Nothing here gates progression: points come from moving, and every song, passport, and feature stays earnable free — Finch-style healthy habit design.
+                </p>
               </TabsContent>
 
               {/* ============ HISTORY TAB ============ */}
